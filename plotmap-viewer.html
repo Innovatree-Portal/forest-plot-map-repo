@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>forest-plotmap-viewer</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <style>
+    html, body { height: 100%; margin: 0; background: #000; }
+    #stage { position: fixed; inset: 0; display: grid; place-items: center; background: #000; }
+    img {
+      max-width: 100vw; max-height: 100vh; object-fit: contain;
+      display: block; background: #000;
+    }
+    #msg {
+      position: absolute; inset: 0; display: grid; place-items: center;
+      background: #fff; color: #111;
+      font: 14px system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+      line-height: 1.25; text-align: center;
+    }
+    #msg.hidden { display: none; }
+    #msg .box { max-width: 560px; padding: 10px 14px; }
+    #msg p { margin: 6px 0; }
+    #msg .hint { color: #666; }
+    #msg code { background: #f2f2f2; padding: 2px 4px; border-radius: 4px; font-size: 12px; }
+  </style>
+</head>
+<body>
+  <div id="stage">
+    <img id="plotimg" alt="Plot map" />
+  </div>
+  <div id="msg" class="hidden"></div>
+
+  <script>
+    const qs = new URLSearchParams(location.search);
+
+    // Inputs
+    const urlParam   = qs.get("url");           // direct image URL (takes precedence)
+    const plotParam  = qs.get("plot");          // plot id to build a URL
+    const bg         = qs.get("bg");            // optional background color, e.g. bg=%23000000
+    const fit        = qs.get("fit");           // contain (default) | cover | fill | scale-down | none
+
+    // GitHub raw defaults (override via query params if your structure changes)
+    const owner   = qs.get("owner")  || "Innovatree-Portal";
+    const repo    = qs.get("repo")   || "forest-plot-map-repo";
+    const branch  = qs.get("branch") || "main";
+    const folder  = qs.get("folder") || "plot maps V5";  // we will encode segments
+    const pattern = qs.get("pattern")|| "Plot{plot}_azimuth_map"; // filename without extension
+    const ext     = (qs.get("ext") || "png").replace(/^\./, "");  // png/jpg/etc
+
+    // Elements
+    const imgEl  = document.getElementById("plotimg");
+    const msgEl  = document.getElementById("msg");
+    const box    = (html) => `<div class="box">${html}</div>`;
+    const showMsg = (html) => { msgEl.innerHTML = box(html); msgEl.classList.remove("hidden"); };
+    const hideMsg = () => msgEl.classList.add("hidden");
+
+    if (bg) document.body.style.background = bg;
+    imgEl.style.objectFit = ["contain","cover","fill","scale-down","none"].includes(fit) ? fit : "contain";
+
+    function encodeFolderPath(path) {
+      // Encode each segment but preserve slashes
+      return path.split("/").map(encodeURIComponent).join("/");
+    }
+
+    function ghRawUrl({ owner, repo, branch, folder, filename }) {
+      const encFolder = encodeFolderPath(folder);
+      const encFile = encodeURIComponent(filename);
+      return `https://raw.githubusercontent.com/${owner}/${repo}/${branch}/${encFolder}/${encFile}`;
+    }
+
+    function buildFilenameFromPlot(plotKey) {
+      // pattern like "Plot{plot}_azimuth_map" + "." + ext
+      return pattern.replace("{plot}", plotKey) + "." + ext;
+    }
+
+    function setSrc(src) {
+      if (!src) {
+        showMsg(`
+          <p>Provide a direct image URL or a plot id.</p>
+          <p class="hint"><code>?url=https://raw.githubusercontent.com/…/Plot57_azimuth_map.png</code></p>
+          <p class="hint"><code>?plot=57</code> (uses your repo defaults)</p>
+          <p class="hint">Optional: <code>bg</code>, <code>fit=contain|cover|fill|scale-down|none</code>, <code>owner</code>, <code>repo</code>, <code>branch</code>, <code>folder</code>, <code>pattern</code>, <code>ext</code></p>
+          <p class="hint">Tip: Use <code>raw.githubusercontent.com</code> instead of the GitHub "blob" URL.</p>
+        `);
+        return;
+      }
+      hideMsg();
+      imgEl.src = src;
+    }
+
+    // Error/help wiring
+    imgEl.addEventListener("error", () => {
+      showMsg(`
+        <p>Failed to load the plot map image.</p>
+        <p class="hint">If you used a GitHub link, make sure it's a <code>raw.githubusercontent.com</code> URL.</p>
+        <p class="hint">For example:</p>
+        <p class="hint"><code>https://raw.githubusercontent.com/${owner}/${repo}/${branch}/${encodeFolderPath(folder)}/${buildFilenameFromPlot("100")}</code></p>
+      `);
+    });
+
+    imgEl.addEventListener("load", hideMsg);
+
+    (function init(){
+      // 1) Direct URL
+      if (urlParam) {
+        setSrc(urlParam);
+        return;
+      }
+
+      // 2) Plot lookup via GitHub raw URL
+      if (plotParam) {
+        const key = String(parseInt(plotParam, 10)); // plot ids are clean integers now
+        const filename = buildFilenameFromPlot(key);
+        const src = ghRawUrl({ owner, repo, branch, folder, filename });
+        showMsg(`<p>Loading plot ${key}…</p>`);
+        setSrc(src);
+        return;
+      }
+
+      // 3) No params
+      setSrc(null);
+    })();
+  </script>
+</body>
+</html>
